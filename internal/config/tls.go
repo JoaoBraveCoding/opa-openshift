@@ -2,11 +2,18 @@ package config
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"k8s.io/component-base/cli/flag"
+)
+
+var (
+	ErrServerCredentials = errors.New("failed to load server credentials")
+	ErrInvalidTLSVersion = errors.New("invalid TLS version")
+	ErrCipherSuiteID     = errors.New("failed to convert TLS cipher suite name to ID")
 )
 
 // NewServerConfig provides new server TLS configuration.
@@ -21,17 +28,17 @@ func NewServerConfig(logger log.Logger, certFile, keyFile, minVersion string, ci
 
 	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("server credentials: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrServerCredentials, err)
 	}
 
 	version, err := flag.TLSVersion(minVersion)
 	if err != nil {
-		return nil, fmt.Errorf("TLS version invalid: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidTLSVersion, err)
 	}
 
 	cipherSuiteIDs, err := flag.TLSCipherSuites(cipherSuites)
 	if err != nil {
-		return nil, fmt.Errorf("TLS cipher suite name to ID conversion: %v", err)
+		return nil, fmt.Errorf("%w: %v", ErrCipherSuiteID, err)
 	}
 
 	tlsCfg := &tls.Config{

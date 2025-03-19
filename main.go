@@ -18,14 +18,15 @@ import (
 	"github.com/metalmatze/signal/healthcheck"
 	"github.com/metalmatze/signal/internalserver"
 	"github.com/metalmatze/signal/server/signalhttp"
-	"github.com/observatorium/opa-openshift/internal/cache"
-	"github.com/observatorium/opa-openshift/internal/config"
-	"github.com/observatorium/opa-openshift/internal/handler"
-	"github.com/observatorium/opa-openshift/internal/instrumentation"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/version"
 	"k8s.io/component-base/cli/flag"
+
+	"github.com/observatorium/opa-openshift/internal/cache"
+	"github.com/observatorium/opa-openshift/internal/config"
+	"github.com/observatorium/opa-openshift/internal/handler"
+	"github.com/observatorium/opa-openshift/internal/instrumentation"
 )
 
 const (

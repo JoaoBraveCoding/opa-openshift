@@ -2,12 +2,20 @@ package authorizer
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/observatorium/opa-openshift/internal/config"
 	"github.com/open-policy-agent/opa/v1/server/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/observatorium/opa-openshift/internal/config"
+)
+
+var (
+	ErrGetCacheTest      = errors.New("get-cache error")
+	ErrSARErrorTest      = errors.New("test SAR error")
+	ErrListNamespaceTest = errors.New("test list namespace error")
 )
 
 type sarFunc func(user string, groups []string, verb, resource, resourceName, apiGroup, namespace string) (bool, error)
@@ -130,9 +138,9 @@ func TestAuthorize(t *testing.T) {
 		},
 		{
 			desc:        "fail - cache get error",
-			cacheGetErr: errors.New("get-cache error"),
+			cacheGetErr: ErrGetCacheTest,
 			verb:        GetVerb,
-			wantErr:     errors.New("failed to fetch authorization response from cache: get-cache error"),
+			wantErr:     fmt.Errorf("%w: get-cache error", ErrCacheFetchFailed),
 		},
 		{
 			desc:    "fail - wrong verb",
@@ -140,25 +148,25 @@ func TestAuthorize(t *testing.T) {
 			sarFunc: allowSAR,
 			nsList:  []string{},
 			verb:    "invalid",
-			wantErr: errors.New("unexpected verb: invalid"),
+			wantErr: fmt.Errorf("%w: invalid", ErrUnexpectedVerb),
 		},
 		{
 			desc:    "fail - SAR error",
 			matcher: config.EmptyMatcher(),
-			sarFunc: simpleSARFunc(false, errors.New("test SAR error")),
+			sarFunc: simpleSARFunc(false, ErrSARErrorTest),
 			nsList: []string{
 				"test-namespace-1",
 			},
 			verb:    GetVerb,
-			wantErr: errors.New("cluster-wide SAR failed: test SAR error"),
+			wantErr: fmt.Errorf("%w: test SAR error", ErrClusterSARFailed),
 		},
 		{
 			desc:    "fail - list namespace error",
 			matcher: namespaceMatcher,
 			sarFunc: allowSAR,
-			nsErr:   errors.New("test list namespace error"),
+			nsErr:   ErrListNamespaceTest,
 			verb:    GetVerb,
-			wantErr: errors.New("failed to access api server: test list namespace error"),
+			wantErr: fmt.Errorf("%w: test list namespace error", ErrNamespaceListFailed),
 		},
 		{
 			desc:          "allow - cached",
@@ -229,18 +237,16 @@ func TestAuthorize(t *testing.T) {
 					return false, nil
 				}
 
-				return false, errors.New("namespaced SAR error")
+				return false, ErrNamespacedSARFailed
 			},
 			nsList:     []string{"test-namespace-0", "test-namespace-1"},
 			verb:       GetVerb,
 			namespaces: []string{"test-namespace-1"},
-			wantErr:    errors.New("namespaced SAR failed: namespaced SAR error"),
+			wantErr:    fmt.Errorf("%w: namespaced SAR failed", ErrNamespacedSARFailed),
 		},
 	}
 
 	for _, tc := range tt {
-		tc := tc
-
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 

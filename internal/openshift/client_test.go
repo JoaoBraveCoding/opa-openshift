@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/observatorium/opa-openshift/internal/external/k8s/k8sfakes"
-	"github.com/observatorium/opa-openshift/internal/external/ocp/ocpfakes"
 	projectv1 "github.com/openshift/api/project/v1"
 	"github.com/stretchr/testify/require"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/observatorium/opa-openshift/internal/external/k8s/k8sfakes"
+	"github.com/observatorium/opa-openshift/internal/external/ocp/ocpfakes"
 )
 
 func TestListNamespaces_ReturnsOnlyNames(t *testing.T) {

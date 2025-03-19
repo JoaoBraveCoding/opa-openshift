@@ -70,7 +70,12 @@ shellcheck: $(SHELLCHECK)
 
 .PHONY: lint
 lint: $(GOLANGCI_LINT) go-fmt shellcheck
-	$(GOLANGCI_LINT) run -c .golangci.yml
+	$(GOLANGCI_LINT) config verify
+	$(GOLANGCI_LINT) run --timeout=5m ./...
+
+.PHONY: lint-fix
+lint-fix: $(GOLANGCI_LINT) ## Attempt to automatically fix lint issues in source code.
+	$(GOLANGCI_LINT) run --fix --timeout=5m ./...
 
 .PHONY: test
 test: build test-unit test-integration

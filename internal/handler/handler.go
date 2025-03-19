@@ -7,12 +7,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/transport"
+
 	"github.com/observatorium/opa-openshift/internal/authorizer"
 	"github.com/observatorium/opa-openshift/internal/cache"
 	"github.com/observatorium/opa-openshift/internal/config"
 	"github.com/observatorium/opa-openshift/internal/openshift"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/transport"
 )
 
 const (
@@ -66,6 +67,7 @@ func New(l log.Logger, c cache.Cacher, wt transport.WrapperFunc, cfg *config.Con
 			http.Error(w, "failed to read body", http.StatusInternalServerError)
 			return //nolint:nlreturn
 		}
+		//nolint:errcheck
 		defer r.Body.Close()
 
 		var req dataRequestV1

@@ -2,22 +2,35 @@ package authorizer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/open-policy-agent/opa/v1/server/types"
+	"github.com/prometheus/prometheus/pkg/labels"
+
 	"github.com/observatorium/opa-openshift/internal/cache"
 	"github.com/observatorium/opa-openshift/internal/config"
 	"github.com/observatorium/opa-openshift/internal/openshift"
-	"github.com/open-policy-agent/opa/v1/server/types"
-	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 const (
 	GetVerb    = "get"
 	CreateVerb = "create"
+)
+
+var (
+	ErrUnexpectedVerb       = errors.New("unexpected verb")
+	ErrCacheFetchFailed     = errors.New("failed to fetch authorization response from cache")
+	ErrClusterSARFailed     = errors.New("cluster-wide SAR failed")
+	ErrNamespaceListFailed  = errors.New("failed to access API server")
+	ErrNamespacedSARFailed  = errors.New("namespaced SAR failed")
+	ErrAuthResponseCreation = errors.New("failed to create auth response")
+	ErrMatcherCreation      = errors.New("failed to create new matcher")
+	ErrMatcherMarshal       = errors.New("failed to marshal matcher to JSON")
 )
 
 type Authorizer struct {
@@ -58,7 +71,7 @@ func (a *Authorizer) Authorize(
 	switch verb {
 	case CreateVerb, GetVerb:
 	default:
-		return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("unexpected verb: %s", verb), http.StatusBadRequest}
+		return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("%w: %s", ErrUnexpectedVerb, verb), http.StatusBadRequest}
 	}
 
 	cacheKey := generateCacheKey(token, user, groups, verb, resource, resourceName, apiGroup, namespaces, metadataOnly)
@@ -67,7 +80,7 @@ func (a *Authorizer) Authorize(
 	res, ok, err := a.cache.Get(cacheKey)
 	if err != nil {
 		return types.DataResponseV1{},
-			&StatusCodeError{fmt.Errorf("failed to fetch authorization response from cache: %w", err), http.StatusInternalServerError}
+			&StatusCodeError{fmt.Errorf("%w: %v", ErrCacheFetchFailed, err), http.StatusInternalServerError}
 	}
 
 	if ok {
@@ -92,7 +105,7 @@ func (a *Authorizer) authorizeInner(user string, groups []string, verb, resource
 	// check if user has cluster-wide access
 	clusterAllow, err := a.client.SubjectAccessReview(user, groups, verb, resource, resourceName, apiGroup, "")
 	if err != nil {
-		return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("cluster-wide SAR failed: %w", err), http.StatusUnauthorized}
+		return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("%w: %v", ErrClusterSARFailed, err), http.StatusUnauthorized}
 	}
 
 	//nolint:errcheck
@@ -117,7 +130,7 @@ func (a *Authorizer) authorizeInner(user string, groups []string, verb, resource
 		// Only a metadata request and no namespaces provided -> populate with API list
 		nsList, err := a.client.ListNamespaces()
 		if err != nil {
-			return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("failed to access api server: %w", err), http.StatusUnauthorized}
+			return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("%w: %v", ErrNamespaceListFailed, err), http.StatusUnauthorized}
 		}
 		//nolint:errcheck
 		level.Debug(a.logger).Log("msg", "list namespaces for meta request",
@@ -137,7 +150,7 @@ func (a *Authorizer) authorizeInner(user string, groups []string, verb, resource
 		nsAllowed, err := a.client.SubjectAccessReview(user, groups, verb, resource, resourceName, apiGroup, ns)
 		if err != nil {
 			return types.DataResponseV1{},
-				&StatusCodeError{fmt.Errorf("namespaced SAR failed: %w", err), http.StatusUnauthorized}
+				&StatusCodeError{fmt.Errorf("%w: %v", ErrNamespacedSARFailed, err), http.StatusUnauthorized}
 		}
 		//nolint:errcheck
 		level.Debug(a.logger).Log(
@@ -161,7 +174,7 @@ func (a *Authorizer) authorizeInner(user string, groups []string, verb, resource
 	res, err := newDataResponseV1(allowed, a.matcher)
 	if err != nil {
 		return types.DataResponseV1{},
-			&StatusCodeError{fmt.Errorf("failed to create auth response: %w", err), http.StatusInternalServerError}
+			&StatusCodeError{fmt.Errorf("%w: %v", ErrAuthResponseCreation, err), http.StatusInternalServerError}
 	}
 
 	return res, nil
@@ -176,7 +189,7 @@ func (a *Authorizer) authorizeClusterWide(namespaces []string) (types.DataRespon
 	// user has cluster-wide access but needs a matcher -> populate namespaces from API list
 	nsList, err := a.client.ListNamespaces()
 	if err != nil {
-		return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("failed to access api server: %w", err), http.StatusUnauthorized}
+		return types.DataResponseV1{}, &StatusCodeError{fmt.Errorf("%w: %v", ErrNamespaceListFailed, err), http.StatusUnauthorized}
 	}
 
 	if len(namespaces) == 0 {
@@ -215,7 +228,7 @@ func newDataResponseV1(ns []string, matcher *config.Matcher) (types.DataResponse
 	for _, key := range matcher.Keys {
 		lm, err := labels.NewMatcher(labels.MatchRegexp, key, strings.Join(ns, "|"))
 		if err != nil {
-			return types.DataResponseV1{}, fmt.Errorf("failed to create new matcher: %w", err)
+			return types.DataResponseV1{}, fmt.Errorf("%w: %v", ErrMatcherCreation, err)
 		}
 		matchers = append(matchers, lm)
 	}
@@ -225,7 +238,7 @@ func newDataResponseV1(ns []string, matcher *config.Matcher) (types.DataResponse
 		MatcherOp: matcher.MatcherOp,
 	})
 	if err != nil {
-		return types.DataResponseV1{}, fmt.Errorf("failed to marshal matcher to json: %w", err)
+		return types.DataResponseV1{}, fmt.Errorf("%w: %v", ErrMatcherMarshal, err)
 	}
 
 	allowed := "true"
